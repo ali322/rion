@@ -1,4 +1,4 @@
-use crate::{pkg::SharedState, util::APIResult};
+use crate::{pkg::State, util::APIResult};
 use axum::{
     extract::{Path, Query},
     routing::post,
@@ -19,7 +19,7 @@ async fn create_pub(Json(body): Json<NewPub>) -> APIResult {
     body.validate()?;
     Ok(reply!("created"))
 }
-pub fn apply_routes() -> Router<SharedState> {
+pub fn apply_routes() -> Router {
     let router = Router::new();
     router.route("/public/org", post(create_pub))
 }

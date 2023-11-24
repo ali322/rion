@@ -1,3 +1,7 @@
+use crate::{
+    pkg::{SharedState, SHARED_STATE},
+    util::config::CONFIG,
+};
 use anyhow::{anyhow, Context, Result};
 use std::{
     pin::Pin,
@@ -7,7 +11,10 @@ use std::{
     },
     time::SystemTime,
 };
-use tokio::{sync::oneshot, time::Duration};
+use tokio::{
+    sync::oneshot,
+    time::{timeout, Duration},
+};
 use tracing::{error, info, Instrument};
 use webrtc::{
     api::{
@@ -312,4 +319,96 @@ impl PublisherDetails {
             .instrument(tracing::Span::current()),
         );
     }
+}
+
+pub async fn webrtc_to_nats(
+    room: String,
+    user: String,
+    offer: String,
+    answer_tx: oneshot::Sender<String>,
+    tid: u16,
+) -> Result<()> {
+    // NATS
+    info!("getting NATS");
+    let nc = SHARED_STATE.get_nats().context("get NATS client failed")?;
+    let peer_connection = Arc::new(
+        PublisherDetails::create_pc(
+            CONFIG.app.stun.clone(),
+            CONFIG.app.turn.clone(),
+            CONFIG.app.turn_user.clone(),
+            CONFIG.app.turn_password.clone(),
+            CONFIG.app.public_ip.clone(),
+        )
+        .await
+        .context("failed to create pc")?,
+    );
+    let publisher = PublisherDetails {
+        user: user.clone(),
+        room: room.clone(),
+        pc: peer_connection.clone(),
+        nats: nc.clone(),
+        notify_close: Default::default(),
+        created: std::time::SystemTime::now(),
+    };
+
+    let offer = RTCSessionDescription::offer(offer.to_string()).unwrap();
+    // Set a handler for when a new remote track starts, this handler will forward data to our UDP listeners.
+    // In your application this is where you would handle/process audio/video
+    peer_connection.on_track(publisher.on_track());
+
+    // Set the handler for ICE connection state
+    // This will notify you when the peer has connected/disconnected
+    peer_connection.on_ice_connection_state_change(publisher.on_ice_connection_state_change());
+
+    // Set the handler for Peer connection state
+    // This will notify you when the peer has connected/disconnected
+    peer_connection.on_peer_connection_state_change(publisher.on_peer_connection_state_change());
+
+    // Register data channel creation handling
+    // peer_connection
+    //     .on_data_channel(publisher.on_data_channel())
+    //     .await;
+
+    // Set the remote SessionDescription
+    // this will trigger tranceivers creation underneath
+    info!("PC set remote SDP");
+    peer_connection.set_remote_description(offer).await?;
+
+    // Create an answer
+    info!("PC create local SDP");
+    let answer = peer_connection.create_answer(None).await?;
+
+    // // Create channel that is blocked until ICE Gathering is complete
+    let mut gather_complete = peer_connection.gathering_complete_promise().await;
+
+    // // Sets the LocalDescription, and starts our UDP listeners
+    peer_connection
+        .set_local_description(answer)
+        .await
+        .context("set local SDP failed")?;
+
+    // // Block until ICE Gathering is complete, disabling trickle ICE
+    // // we do this because we only can exchange one signaling message
+    // // in a production application you should exchange ICE Candidates via OnICECandidate
+    let _ = gather_complete.recv().await;
+
+    // // Send out the SDP answer via Sender
+    if let Some(local_desc) = peer_connection.local_description().await {
+        info!("PC send local SDP");
+        answer_tx
+            .send(local_desc.sdp)
+            .map_err(|s| anyhow!(s).context("SDP answer send error"))?;
+    } else {
+        // TODO: when will this happen?
+        error!("generate local_description failed!");
+    }
+
+    // // limit a publisher to 24 hours for now
+    // // after 24 hours, we close the connection
+    let max_time = Duration::from_secs(24 * 60 * 60);
+    timeout(max_time, publisher.notify_close.notified()).await?;
+    // peer_connection.close().await;
+    // peer_connection.close().await?;
+    info!("leaving publisher main");
+    Ok(())
 }
