@@ -9,7 +9,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
-    pub port: u32,
+    pub port: u16,
     pub log_dir: String,
 }
 

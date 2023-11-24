@@ -1,4 +1,4 @@
-use crate::state::SharedState;
+use crate::pkg::SharedState;
 use axum::{routing::get, Router};
 
 macro_rules! reject {
@@ -16,11 +16,11 @@ macro_rules! reply {
 mod v1;
 async fn index() -> &'static str {
     tracing::info!("hi route");
-    "hi"
+    "pong"
 }
 
 pub fn apply_routes() -> Router<SharedState> {
     let prefix = "/api/v1";
-    let router = Router::new().route("/", get(index));
+    let router = Router::new().route("/ping", get(index));
     router.nest(prefix, v1::apply_routes())
 }

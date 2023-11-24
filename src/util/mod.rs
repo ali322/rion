@@ -1,4 +1,5 @@
 mod api_error;
+pub mod config;
 pub mod jwt;
 pub mod logger;
 pub mod serde_format;

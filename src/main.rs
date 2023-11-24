@@ -1,5 +1,8 @@
 use axum::{error_handling::HandleErrorLayer, http::Method, Server};
-use rion::{init_logger, middleware::handle_error, util::config};
+use rion::{
+    api::apply_routes, init_logger, middleware::handle_error, pkg::SharedState, util::config,
+};
+use std::{net::SocketAddr, time::Duration};
 use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
@@ -26,5 +29,10 @@ async fn main() {
         .timeout(Duration::from_secs(30));
     let app_state = SharedState::default();
     let routes = apply_routes().layer(middlewares).with_state(app_state);
-    println!("Hello, world!");
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.app.port));
+    tracing::info!("app started at {}", config.app.port);
+    Server::bind(&addr)
+        .serve(routes.into_make_service())
+        .await
+        .expect("app started failed")
 }

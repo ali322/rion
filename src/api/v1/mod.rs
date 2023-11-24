@@ -1,4 +1,4 @@
-use crate::{middleware::JWT, state::SharedState};
+use crate::{middleware::JWT, pkg::SharedState};
 use axum::Router;
 use std::collections::HashMap;
 use tower_http::auth::RequireAuthorizationLayer;
