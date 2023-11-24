@@ -304,9 +304,9 @@ class WeeverPeerConnection {
     let log = (msg) => this._log(msg)
     let _catch = (e) => this.onError(e)
     let pc = this.pc
-    console.log('role', this.role)
+    console.log('role========', this.role)
     // send to Weever Streaming
-    let _url = `${this.url}/${this.role}/${this.room}/${this.full_id}`
+    let _url = `${this.url}/${this.role}/${this.room}/${this.full_id}=========`
     log(`url ${_url}`)
     fetch(_url, {
       method: 'POST',
@@ -317,14 +317,14 @@ class WeeverPeerConnection {
       body: offer.sdp,
     })
       .then((res) => {
-        res.text().then(function (answer) {
-          log('remote SDP Answer:' + answer)
-          if (answer == 'bad token') {
+        res.json().then(function (resp) {
+          log('remote SDP Answer=========:' + resp.data.sdp)
+          if (resp.data.sdp == 'bad token') {
             _catch(new Error('bad token'))
             return
           }
           pc.setRemoteDescription(
-            new RTCSessionDescription({ type: 'answer', sdp: answer }),
+            new RTCSessionDescription({ type: 'answer', sdp: resp.data.sdp }),
           ).catch(_catch)
         })
       })

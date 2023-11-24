@@ -125,7 +125,7 @@ impl PublisherDetails {
             Some(Duration::from_secs(1)), // keepalive timeout
         );
         if let Some(ip) = public_ip {
-            setting.set_nat_1to1_ips(vec![ip], RTCIceCandidateType::Srflx);
+            // setting.set_nat_1to1_ips(vec![ip], RTCIceCandidateType::Srflx);
         }
         let api = APIBuilder::new()
             .with_setting_engine(setting)
@@ -140,14 +140,14 @@ impl PublisherDetails {
         //     ..Default::default()
         // });
         if let Some(turn) = turn {
-            let username = turn_username.context("TURN username not preset")?;
-            let password = turn_password.context("TURN password not preset")?;
-            servers.push(RTCIceServer {
-                urls: vec![turn],
-                username,
-                credential: password,
-                ..Default::default()
-            });
+            // let username = turn_username.context("TURN username not preset")?;
+            // let password = turn_password.context("TURN password not preset")?;
+            // servers.push(RTCIceServer {
+            //     urls: vec![turn],
+            //     username,
+            //     credential: password,
+            //     ..Default::default()
+            // });
         }
         let config = RTCConfiguration {
             ice_servers: servers,
