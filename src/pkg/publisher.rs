@@ -177,7 +177,7 @@ impl PublisherDetails {
         let mut is_closed = false;
         Box::new(move |state: RTCPeerConnectionState| {
             let _enter = span.enter();
-            info!("peer connection state has changed: {}", state);
+            info!("pub peer connection state has changed: {}", state);
             match state {
                 RTCPeerConnectionState::Connected => {
                     let now = std::time::SystemTime::now();
@@ -190,7 +190,7 @@ impl PublisherDetails {
                     }
                     .as_millis();
                     info!(
-                        "peer connection connected! spent {} ms from created",
+                        "pub peer connection connected! spent {} ms from created",
                         duration
                     );
                     let room = room.clone();
@@ -209,7 +209,7 @@ impl PublisherDetails {
                     // NOTE:
                     // In disconnected state, PeerConnection may still come back, e.g. reconnect using an ICE Restart.
                     // But let's cleanup everything for now.
-                    info!("send close notification");
+                    info!("pub send close notification");
                     notify_close.notify_waiters();
                     let room = room.clone();
                     let user = user.clone();

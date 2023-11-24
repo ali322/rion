@@ -124,7 +124,7 @@ async fn create_sub(Path((room, full_id)): Path<(String, String)>, sdp: Bytes) -
         }
     };
     debug!("sdp answer: {:.20}", sdp_answer);
-    Ok(reply!({"sdp": "sdp_answer"}))
+    Ok(reply!({"sdp": sdp_answer}))
 }
 
 async fn pubs() -> APIResult {

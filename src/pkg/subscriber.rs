@@ -215,7 +215,7 @@ impl Subscriber {
         let weak = self.downgrade();
         Box::new(move |s: RTCPeerConnectionState| {
             let _enter = span.enter();
-            info!("peer connection state has changed: {}", s);
+            info!("sub peer connection state has changed: {}", s);
             let sub = match weak.upgrade() {
                 Some(sub) => sub,
                 _ => return Box::pin(async {}),
@@ -233,7 +233,7 @@ impl Subscriber {
                     }
                     .as_millis();
                     info!(
-                        "peer connection connected! spent {} ms from created",
+                        "sub peer connection connected! spent {} ms from created",
                         duration
                     );
                     return Box::pin(
@@ -249,7 +249,7 @@ impl Subscriber {
                     // NOTE:
                     // In disconnected state, PeerConnection may still come back, e.g. reconnect using an ICE Restart.
                     // But let's cleanup everything for now.
-                    info!("send close notification");
+                    info!("sub send close notification");
                     sub.notify_close.notify_waiters();
 
                     return Box::pin(
