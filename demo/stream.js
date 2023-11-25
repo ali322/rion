@@ -133,6 +133,10 @@ class WeeverPeerConnection {
       }
     }
 
+    pc.ontrack = (evt) => {
+      console.log('on track ===========', evt)
+    }
+
     dc.onclose = () => log('DataChannel has closed')
     dc.onopen = () => log('DataChannel has opened')
     dc.onmessage = (e) => {

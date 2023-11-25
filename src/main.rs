@@ -45,6 +45,10 @@ async fn main() {
         .expect("connect nats failed");
     info!("nats connected at {}", CONFIG.app.nats);
     SHARED_STATE.set_nats(nats).expect("set nats conn failed");
+    SHARED_STATE
+        .listen_on_commands()
+        .await
+        .expect("listen commands failed");
 
     let routes = apply_routes().layer(middlewares);
     let addr = SocketAddr::from(([0, 0, 0, 0], CONFIG.app.port));

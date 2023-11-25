@@ -525,7 +525,7 @@ impl Subscriber {
                         let mut is_doing_renegotiation = is_doing_renegotiation.lock().await;
                         *is_doing_renegotiation = true;
                         catch(sub.update_transceivers_of_room()).await;
-                        // catch(Self::send_data_sdp_offer(dc.clone(), pc.clone())).await;
+                        catch(Self::send_data_sdp_offer(dc.clone(), pc.clone())).await;
                     }
                     let mut result = Ok(0);
                     while result.is_ok() {
