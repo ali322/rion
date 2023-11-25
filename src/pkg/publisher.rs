@@ -1,5 +1,5 @@
 use crate::{
-    pkg::{SharedState, SHARED_STATE},
+    pkg::{catch, Command, SharedState, SHARED_STATE},
     util::config::CONFIG,
 };
 use anyhow::{anyhow, Context, Result};
@@ -15,7 +15,7 @@ use tokio::{
     sync::oneshot,
     time::{timeout, Duration},
 };
-use tracing::{error, info, Instrument};
+use tracing::{debug, error, info, Instrument};
 use webrtc::{
     api::{
         interceptor_registry::register_default_interceptors,
@@ -195,7 +195,12 @@ impl PublisherDetails {
                     );
                     let room = room.clone();
                     let user = user.clone();
-                    return Box::pin(async move {}.instrument(tracing::Span::current()));
+                    return Box::pin(
+                        async move {
+                            catch(SHARED_STATE.add_publisher(&room, &user)).await;
+                        }
+                        .instrument(tracing::Span::current()),
+                    );
                 }
                 RTCPeerConnectionState::Failed
                 | RTCPeerConnectionState::Disconnected
@@ -213,12 +218,32 @@ impl PublisherDetails {
                     notify_close.notify_waiters();
                     let room = room.clone();
                     let user = user.clone();
-                    return Box::pin(async move {}.instrument(tracing::Span::current()));
+                    return Box::pin(
+                        async move {
+                            // tell subscribers a new publisher just leave
+                            // ask subscribers to renegotiation
+                            catch(Self::notify_subs_for_leave(&room, &user)).await;
+                            catch(SHARED_STATE.remove_publisher(&room, &user)).await;
+                        }
+                        .instrument(tracing::Span::current()),
+                    );
                 }
                 _ => {}
             }
             Box::pin(async {})
         })
+    }
+
+    async fn notify_subs_for_leave(room: &str, user: &str) -> Result<()> {
+        info!("notify subscribers for publisher leave");
+        catch(SHARED_STATE.remove_user_media_count(room, user)).await;
+        catch(SHARED_STATE.send_command(room, Command::PubLeft(user.to_string()))).await;
+        Ok(())
+    }
+
+    async fn notify_subs_for_join(room: &str, user: &str) {
+        info!("notify subscribers for publisher join");
+        catch(SHARED_STATE.send_command(room, Command::PubJoin(user.to_string()))).await;
     }
 
     fn on_track(&self) -> OnTrackHdlrFn {
@@ -241,8 +266,8 @@ impl PublisherDetails {
                 let room = room.clone();
                 let nc = nc.clone();
                 let track_count = track_count.clone();
-                let video_count = track_count.clone();
-                let audio_count = track_count.clone();
+                let video_count = video_count.clone();
+                let audio_count = audio_count.clone();
                 return Box::pin(async move {
                     let tid = track.tid();
                     let kind = track.kind().to_string();
@@ -270,7 +295,7 @@ impl PublisherDetails {
                         }
                         _ => unreachable!(),
                     };
-                    // catch(SHARED_STATE.add_user_media_count(&room, &user, &kind)).await;
+                    catch(SHARED_STATE.add_user_media_count(&room, &user, &kind)).await;
                     // if all the tranceivers have active track
                     // let's fire the publisher join notify to all subscribers
                     {
@@ -281,7 +306,7 @@ impl PublisherDetails {
                         let total = pc.get_transceivers().await.len();
                         if count as usize >= total {
                             info!("we got {} active remote tracks, all ready", total);
-                            // Self::notify_subs_for_join(&room, &user).await;
+                            Self::notify_subs_for_join(&room, &user).await;
                         } else {
                             info!("we got {} active remote tracks, target is {}", count, total);
                         }
@@ -290,10 +315,35 @@ impl PublisherDetails {
                     let media_ssrc = track.ssrc();
                     Self::spawn_periodic_pli(wpc.clone(), media_ssrc);
                     // push RTP to NATS
-                    // Self::spawn_rtp_to_nats(room, user, app_id.to_string(), track, nc.clone());
+                    Self::spawn_rtp_to_nats(room, user, app_id.to_string(), track, nc.clone());
                 });
             },
         )
+    }
+
+    fn spawn_rtp_to_nats(
+        room: String,
+        user: String,
+        app_id: String,
+        track: Arc<TrackRemote>,
+        nats: nats::asynk::Connection,
+    ) {
+        tokio::spawn(
+            async move {
+                let kind = track.kind().to_string();
+                let subject = format!("rtc.{}.{}.{}.{}", room, user, kind, app_id);
+                info!("publish to {}", subject);
+                let mut b = vec![0u8; 1500];
+                // use a timeout to make sure we will close this loop if we don't get new RTP for a while
+                let max_time = Duration::from_secs(10);
+                while let Ok(Ok((n, _))) = timeout(max_time, track.read(&mut b)).await {
+                    nats.publish(&subject, &b[..n]).await?;
+                }
+                info!("leaving rtp to nats publish: {}", subject);
+                Result::<()>::Ok(())
+            }
+            .instrument(tracing::Span::current()),
+        );
     }
 
     fn spawn_periodic_pli(wpc: WeakPeerConnection, media_ssrc: u32) {
@@ -318,6 +368,121 @@ impl PublisherDetails {
             }
             .instrument(tracing::Span::current()),
         );
+    }
+
+    fn on_data_channel(&self) -> OnDataChannelHdlrFn {
+        let span = tracing::Span::current();
+        let wpc = self.pc_downgrade();
+        let room = self.room.clone();
+        let user = self.user.clone();
+        Box::new(move |dc: Arc<RTCDataChannel>| {
+            let _enter = span.enter();
+            let dc_label = dc.label().to_owned();
+            if dc_label != "control" {
+                return Box::pin(async {});
+            }
+            let dc_id = dc.id();
+            info!("new dataChannel {} {}", dc_label, dc_id);
+            Self::on_data_channel_open(room.clone(), user.clone(), wpc.clone(), dc, dc_label)
+        })
+    }
+
+    fn on_data_channel_open(
+        room: String,
+        user: String,
+        wpc: WeakPeerConnection,
+        dc: Arc<RTCDataChannel>,
+        dc_label: String,
+    ) -> Pin<Box<tracing::instrument::Instrumented<impl std::future::Future<Output = ()>>>> {
+        Box::pin(
+            async move {
+                // Register text message handling
+                dc.on_message(Self::on_data_channel_msg(
+                    room,
+                    user,
+                    wpc,
+                    dc.clone(),
+                    dc_label,
+                ));
+            }
+            .instrument(tracing::Span::current()),
+        )
+    }
+
+    fn on_data_channel_msg(
+        _room: String,
+        _user: String,
+        wpc: WeakPeerConnection,
+        dc: Arc<RTCDataChannel>,
+        dc_label: String,
+    ) -> OnMessageHdlrFn {
+        let span = tracing::Span::current();
+        Box::new(move |msg: DataChannelMessage| {
+            let _enter = span.enter();
+            let pc = match wpc.upgrade() {
+                Some(pc) => pc,
+                None => return Box::pin(async {}),
+            };
+            let dc = dc.clone();
+            let msg_str = String::from_utf8(msg.data.to_vec()).unwrap_or_default();
+            info!("message from datachannel '{}': '{:.20}'", dc_label, msg_str);
+            if msg_str.starts_with("SDP_OFFER") {
+                let offer = match msg_str.split_once(' ').map(|x| x.1) {
+                    Some(v) => v,
+                    _ => return Box::pin(async {}),
+                };
+                debug!("got new sdp offer: {}", offer);
+                let offer = RTCSessionDescription::offer(offer.to_string()).unwrap();
+                return Box::pin(
+                    async move {
+                        // TODO: dynamic add/remove media handling, and let subscribers know
+                        let dc = dc.clone();
+                        if let Err(e) = pc.set_remote_description(offer).await {
+                            error!("set remote description failed: {}", e);
+                            return;
+                        }
+                        info!("update with new offer");
+                        let answer = match pc.create_offer(None).await {
+                            Ok(v) => v,
+                            Err(e) => {
+                                error!("recreate answer failed: {}", e);
+                                return;
+                            }
+                        };
+                        if let Err(e) = pc.set_local_description(answer.clone()).await {
+                            error!("set local description failed: {}", e);
+                            return;
+                        };
+                        if let Some(answer) = pc.local_description().await {
+                            info!("sent new sdp answer");
+                            if let Err(e) = dc.send_text(format!("SDP_ANSWER {}", answer.sdp)).await
+                            {
+                                error!("send SDP_ANSWER to data channel failed: {}", e);
+                            }
+                        }
+                    }
+                    .instrument(span.clone()),
+                );
+            } else if msg_str == "STOP" {
+                info!("actively close peer connection");
+                return Box::pin(
+                    async move {
+                        // let _ = pc.close().await;
+                    }
+                    .instrument(span.clone()),
+                );
+            }
+            // still send something back even if we don't do special things
+            // so browser knows server received the messages
+            Box::pin(
+                async move {
+                    if let Err(err) = dc.send_text("OK".to_string()).await {
+                        error!("send OK to data channel error: {}", err);
+                    };
+                }
+                .instrument(span.clone()),
+            )
+        })
     }
 }
 
@@ -365,9 +530,7 @@ pub async fn webrtc_to_nats(
     peer_connection.on_peer_connection_state_change(publisher.on_peer_connection_state_change());
 
     // Register data channel creation handling
-    // peer_connection
-    //     .on_data_channel(publisher.on_data_channel())
-    //     .await;
+    peer_connection.on_data_channel(publisher.on_data_channel());
 
     // Set the remote SessionDescription
     // this will trigger tranceivers creation underneath
