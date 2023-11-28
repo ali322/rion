@@ -21,6 +21,9 @@ pub trait SharedState {
     /// Get NATS connection
     fn get_nats(&self) -> Result<nats::asynk::Connection>;
 
+    async fn add_room(&self, domain: String) -> Result<String>;
+    async fn remove_room(&self, domain: String, room: String) -> Result<()>;
+    async fn list_room(&self, domain: String) -> Result<HashSet<String>>;
     /// Set publisher authorization token
     async fn set_pub_token(&self, room: String, user: String, token: String) -> Result<()>;
     /// Set subscriber authorization token

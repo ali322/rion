@@ -1,3 +1,4 @@
+use crate::util::short_id;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use bincode::{config::standard, Decode, Encode};
@@ -56,6 +57,62 @@ impl SharedState for State {
             .as_ref()
             .context("get NATS client failed")?
             .clone())
+    }
+
+    async fn add_room(&self, domain: String) -> Result<String> {
+        // redis version:
+        let mut conn = self.get_redis()?;
+        let redis_key = format!("room#{}", domain);
+        let c: u64 = conn.scard(&redis_key).await.context("Redis scard failed")?;
+        // let room = uuid_v4();
+        let room = short_id(c);
+        let _: Option<()> = conn
+            .sadd(&redis_key, room.clone())
+            .await
+            .context("Redis sadd failed")?;
+        // set Redis key TTL to 1 day
+        let _: Option<()> = conn
+            .expire(&redis_key, 30 * 24 * 60 * 60)
+            .await
+            .context("Redis expire failed")?;
+
+        // local state (for metrics)
+        let mut state = self
+            .write()
+            .map_err(|e| anyhow!("Get global state as write failed: {}", e))?;
+        state.rooms.insert(room.clone(), Default::default());
+        Ok(room)
+    }
+
+    async fn remove_room(&self, domain: String, room: String) -> Result<()> {
+        let mut conn = self.get_redis()?;
+        let redis_key = format!("room#{}", domain);
+        let _: Option<()> = conn
+            .srem(&redis_key, room.clone())
+            .await
+            .context("Redis sadd failed")?;
+        // set Redis key TTL to 1 day
+        let _: Option<()> = conn
+            .expire(&redis_key, 30 * 24 * 60 * 60)
+            .await
+            .context("Redis expire failed")?;
+
+        // local state (for metrics)
+        let mut state = self
+            .write()
+            .map_err(|e| anyhow!("Get global state as write failed: {}", e))?;
+        state.rooms.remove(&room);
+        Ok(())
+    }
+
+    async fn list_room(&self, domain: String) -> Result<HashSet<String>> {
+        let mut conn = self.get_redis()?;
+        let redis_key = format!("room#{}", domain);
+        let result: HashSet<String> = conn
+            .smembers(redis_key)
+            .await
+            .context("Redis smembers failed")?;
+        Ok(result)
     }
 
     async fn set_pub_token(&self, room: String, user: String, token: String) -> Result<()> {
