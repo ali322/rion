@@ -42,6 +42,7 @@ use webrtc::{
         RTCRtpTransceiver,
     },
     track::track_remote::TrackRemote,
+    util::Marshal,
 };
 
 #[derive(Debug, Clone)]
@@ -336,7 +337,9 @@ impl PublisherDetails {
                 let mut b = vec![0u8; 1500];
                 // use a timeout to make sure we will close this loop if we don't get new RTP for a while
                 let max_time = Duration::from_secs(10);
-                while let Ok(Ok((n, _))) = timeout(max_time, track.read(&mut b)).await {
+                while let Ok(Ok((rtp_packet, _))) = timeout(max_time, track.read(&mut b)).await {
+                    // rtp_packet.header.payload_type = c.payload_type;
+                    let n = rtp_packet.marshal_to(&mut b)?;
                     nats.publish(&subject, &b[..n]).await?;
                 }
                 info!("leaving rtp to nats publish: {}", subject);

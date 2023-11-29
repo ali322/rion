@@ -19,7 +19,7 @@ async fn list_pub(Path(room): Path<String>) -> APIResult {
 }
 
 async fn list_sub(Path(room): Path<String>) -> APIResult {
-    info!("listing publishers for room {}", room);
+    info!("listing subscribers for room {}", room);
     let users = SHARED_STATE
         .list_subscribers(&room)
         .await
