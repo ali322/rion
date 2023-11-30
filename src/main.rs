@@ -6,7 +6,7 @@ use rion::{
     init_logger,
     middleware::handle_error,
     pkg::{SharedState, SHARED_STATE},
-    util::config::CONFIG,
+    util::config::CONFIG
 };
 use std::{net::SocketAddr, time::Duration};
 use tower::ServiceBuilder;

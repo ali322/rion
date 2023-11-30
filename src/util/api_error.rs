@@ -62,10 +62,11 @@ impl IntoResponse for APIError {
     fn into_response(self) -> axum::response::Response {
         let (code, message) = (-2, json!(self));
         let json_body = json!({"code": code, "msg": message}).to_string();
-        let body = body::boxed(body::Full::from(json_body));
-        Response::builder()
-            .status(StatusCode::OK)
-            .body(body)
-            .unwrap()
+        (StatusCode::OK, json_body).into_response()
+        // let body = body::boxed(body::Full::from(json_body));
+        // Response::builder()
+        //     .status(StatusCode::OK)
+        //     .body(body)
+        //     .unwrap()
     }
 }

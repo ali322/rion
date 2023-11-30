@@ -26,7 +26,7 @@ use webrtc::{
     data_channel::{data_channel_message::DataChannelMessage, OnMessageHdlrFn, RTCDataChannel},
     ice_transport::{
         ice_candidate_type::RTCIceCandidateType, ice_connection_state::RTCIceConnectionState,
-        ice_server::RTCIceServer,
+        ice_credential_type::RTCIceCredentialType, ice_server::RTCIceServer,
     },
     interceptor::registry::Registry,
     peer_connection::{
@@ -141,14 +141,16 @@ impl PublisherDetails {
         //     ..Default::default()
         // });
         if let Some(turn) = turn {
-            // let username = turn_username.context("TURN username not preset")?;
-            // let password = turn_password.context("TURN password not preset")?;
-            // servers.push(RTCIceServer {
-            //     urls: vec![turn],
-            //     username,
-            //     credential: password,
-            //     ..Default::default()
-            // });
+            let username = turn_username.context("TURN username not preset")?;
+            let password = turn_password.context("TURN password not preset")?;
+            info!("add turn {} {}:{}", turn, username, password);
+            servers.push(RTCIceServer {
+                urls: vec![turn],
+                username,
+                credential: password,
+                credential_type: RTCIceCredentialType::Password,
+                ..Default::default()
+            });
         }
         let config = RTCConfiguration {
             ice_servers: servers,
@@ -172,6 +174,7 @@ impl PublisherDetails {
     fn on_peer_connection_state_change(&self) -> OnPeerConnectionStateChangeHdlrFn {
         let span = tracing::Span::current();
         let created = self.created;
+        let wpc = self.pc_downgrade();
         let room = self.room.clone();
         let user = self.user.clone();
         let notify_close = self.notify_close.clone();
@@ -196,9 +199,15 @@ impl PublisherDetails {
                     );
                     let room = room.clone();
                     let user = user.clone();
+                    let wpc = wpc.clone();
+
                     return Box::pin(
                         async move {
-                            catch(SHARED_STATE.add_publisher(&room, &user)).await;
+                            let pc = match wpc.upgrade() {
+                                None => return,
+                                Some(pc) => pc,
+                            };
+                            catch(SHARED_STATE.add_publisher(&room, &user, pc)).await;
                         }
                         .instrument(tracing::Span::current()),
                     );
@@ -470,7 +479,7 @@ impl PublisherDetails {
                 info!("actively close peer connection");
                 return Box::pin(
                     async move {
-                        // let _ = pc.close().await;
+                        let _ = pc.close().await;
                     }
                     .instrument(span.clone()),
                 );
@@ -574,7 +583,7 @@ pub async fn webrtc_to_nats(
     let max_time = Duration::from_secs(24 * 60 * 60);
     timeout(max_time, publisher.notify_close.notified()).await?;
     // peer_connection.close().await;
-    // peer_connection.close().await?;
+    peer_connection.close().await?;
     info!("leaving publisher main");
     Ok(())
 }

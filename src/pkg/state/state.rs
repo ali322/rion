@@ -1,4 +1,4 @@
-use crate::util::jwt::Auth;
+use crate::{pkg::SharedState, util::jwt::Auth};
 use anyhow::{anyhow, Context, Result};
 use bincode::{config::standard, Decode, Encode};
 use once_cell::sync::Lazy;
@@ -8,11 +8,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 use tokio::sync::mpsc;
+use webrtc::peer_connection::RTCPeerConnection;
 
 #[derive(Debug, Default)]
 pub struct Room {
     pub subs: HashMap<String, PeerConnectionInfo>,
     pub pubs: HashSet<String>,
+    pub conns: Vec<Arc<RTCPeerConnection>>,
 }
 #[derive(Debug, Default)]
 pub struct PeerConnectionInfo {
@@ -44,12 +46,6 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        AppState {
-            auth: Default::default(),
-            ..Default::default()
-        }
-    }
     pub fn change(&mut self, new: &str) {
         // self.version = new.to_string();
     }

@@ -25,7 +25,7 @@ use webrtc::{
     },
     ice_transport::{
         ice_candidate_type::RTCIceCandidateType, ice_connection_state::RTCIceConnectionState,
-        ice_server::RTCIceServer,
+        ice_credential_type::RTCIceCredentialType, ice_server::RTCIceServer,
     },
     interceptor::registry::Registry,
     peer_connection::{
@@ -155,8 +155,9 @@ impl Subscriber {
         );
 
         if let Some(ip) = public_ip {
+            info!("set public_ip {}", ip);
             // setting.set_nat_1to1_ips(vec![ip], RTCIceCandidateType::Host);
-            // setting.set_nat_1to1_ips(vec![ip], RTCIceCandidateType::Srflx);
+            setting.set_nat_1to1_ips(vec![ip], RTCIceCandidateType::Srflx);
         }
 
         // Create the API object with the MediaEngine
@@ -170,14 +171,16 @@ impl Subscriber {
 
         let mut servers = vec![];
         if let Some(turn) = turn {
-            // let username = turn_username.context("TURN username not preset")?;
-            // let password = turn_password.context("TURN password not preset")?;
-            // servers.push(RTCIceServer {
-            //     urls: vec![turn],
-            //     username,
-            //     credential: password,
-            //     ..Default::default()
-            // });
+            let username = turn_username.context("TURN username not preset")?;
+            let password = turn_password.context("TURN password not preset")?;
+            info!("add turn {} {}:{}", turn, username, password);
+            servers.push(RTCIceServer {
+                urls: vec![turn],
+                username,
+                credential: password,
+                credential_type: RTCIceCredentialType::Password,
+                ..Default::default()
+            });
         }
         let config = RTCConfiguration {
             ice_servers: servers,
@@ -245,7 +248,12 @@ impl Subscriber {
                     );
                     return Box::pin(
                         async move {
-                            catch(SHARED_STATE.add_subscriber(&sub.room, &sub.user)).await;
+                            catch(SHARED_STATE.add_subscriber(
+                                &sub.room,
+                                &sub.user,
+                                Arc::clone(&sub.pc),
+                            ))
+                            .await;
                         }
                         .instrument(tracing::Span::current()),
                     );
@@ -769,7 +777,7 @@ pub async fn nats_to_webrtc(
     // after 24 hours, we close the connection
     let max_time = Duration::from_secs(24 * 60 * 60);
     timeout(max_time, subscriber.notify_close.notified()).await?;
-    // peer_connection.close().await?;
+    peer_connection.close().await?;
     subscriber.deregister_notify_message();
     // remove all spawned tasks
     for task in subscriber

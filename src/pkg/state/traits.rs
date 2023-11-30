@@ -2,8 +2,12 @@ use super::state::Command;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use redis::aio::MultiplexedConnection;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::mpsc;
+use webrtc::peer_connection::RTCPeerConnection;
 
 /// Interface for global state
 ///
@@ -38,7 +42,8 @@ pub trait SharedState {
     async fn remove_user_media_count(&self, room: &str, user: &str) -> Result<()>;
 
     /// Add publisher to room publishers list
-    async fn add_publisher(&self, room: &str, user: &str) -> Result<()>;
+    async fn add_publisher(&self, room: &str, user: &str, pc: Arc<RTCPeerConnection>)
+        -> Result<()>;
     /// Remove publisher from room publishers list
     async fn remove_publisher(&self, room: &str, user: &str) -> Result<()>;
     /// Fetch room publishers list
@@ -47,7 +52,12 @@ pub trait SharedState {
     async fn exist_publisher(&self, room: &str, user: &str) -> Result<bool>;
 
     /// Add subscriber to room subscribers list
-    async fn add_subscriber(&self, room: &str, user: &str) -> Result<()>;
+    async fn add_subscriber(
+        &self,
+        room: &str,
+        user: &str,
+        pc: Arc<RTCPeerConnection>,
+    ) -> Result<()>;
     /// remove subscriber from room subscribers list
     async fn remove_subscriber(&self, room: &str, user: &str) -> Result<()>;
     /// Fetch room subscribers list

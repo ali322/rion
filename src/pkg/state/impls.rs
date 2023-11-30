@@ -9,10 +9,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tracing::{error, info};
+use webrtc::peer_connection::RTCPeerConnection;
 
 use crate::pkg::{
     catch,
-    state::{Command, SHARED_STATE},
+    state::{Command, Room, SHARED_STATE},
 };
 
 use super::state::State;
@@ -101,7 +102,15 @@ impl SharedState for State {
         let mut state = self
             .write()
             .map_err(|e| anyhow!("Get global state as write failed: {}", e))?;
-        state.rooms.remove(&room);
+        async fn close_room(conn: Arc<RTCPeerConnection>) -> Result<()> {
+            conn.close().await.context("close conn failed")?;
+            Ok(())
+        }
+        if let Some(r) = state.rooms.remove(&room) {
+            for conn in r.conns {
+                tokio::spawn(catch(close_room(conn)));
+            }
+        }
         Ok(())
     }
 
@@ -118,7 +127,7 @@ impl SharedState for State {
     async fn set_pub_token(&self, room: String, user: String, token: String) -> Result<()> {
         // redis version:
         let mut conn = self.get_redis()?;
-        let key = format!("token#pub#{}#{}", room, user);
+        let key = format!("room#{}#pub#{}#token", room, user);
         let _: Option<()> = conn
             .set(key.clone(), token)
             .await
@@ -134,7 +143,7 @@ impl SharedState for State {
     async fn set_sub_token(&self, room: String, user: String, token: String) -> Result<()> {
         // redis version:
         let mut conn = self.get_redis()?;
-        let key = format!("token#sub#{}#{}", room, user);
+        let key = format!("room#{}#sub#{}#token", room, user);
         let _: Option<()> = conn
             .set(key.clone(), token)
             .await
@@ -150,7 +159,7 @@ impl SharedState for State {
     async fn get_pub_token(&self, room: &str, user: &str) -> Result<String> {
         // redis version:
         let mut conn = self.get_redis()?;
-        let key = format!("token#pub#{}#{}", room, user);
+        let key = format!("room#{}#pub#{}#token", room, user);
         Ok(conn
             .get(&key)
             .await
@@ -160,7 +169,7 @@ impl SharedState for State {
     async fn get_sub_token(&self, room: &str, user: &str) -> Result<String> {
         // redis version:
         let mut conn = self.get_redis()?;
-        let key = format!("token#sub#{}#{}", room, user);
+        let key = format!("room#{}#sub#{}#token", room, user);
         Ok(conn
             .get(&key)
             .await
@@ -229,7 +238,12 @@ impl SharedState for State {
         Ok(())
     }
 
-    async fn add_publisher(&self, room: &str, user: &str) -> Result<()> {
+    async fn add_publisher(
+        &self,
+        room: &str,
+        user: &str,
+        pc: Arc<RTCPeerConnection>,
+    ) -> Result<()> {
         let mut conn = self.get_redis()?;
         let redis_key = format!("room#{}#pub_list", room);
         let _: Option<()> = conn
@@ -248,7 +262,7 @@ impl SharedState for State {
             .map_err(|e| anyhow!("Get global state as write failed: {}", e))?;
         let room = state.rooms.entry(room.to_string()).or_default();
         room.pubs.insert(user.to_string());
-
+        room.conns.push(pc);
         Ok(())
     }
 
@@ -276,7 +290,6 @@ impl SharedState for State {
         if room_obj.pubs.is_empty() & room_obj.subs.is_empty() {
             let _ = state.rooms.remove(room);
         }
-
         Ok(())
     }
 
@@ -300,7 +313,12 @@ impl SharedState for State {
         Ok(result)
     }
 
-    async fn add_subscriber(&self, room: &str, user: &str) -> Result<()> {
+    async fn add_subscriber(
+        &self,
+        room: &str,
+        user: &str,
+        pc: Arc<RTCPeerConnection>,
+    ) -> Result<()> {
         let mut conn = self.get_redis()?;
         let redis_key = format!("room#{}#sub_list", room);
         let _: Option<()> = conn
@@ -312,6 +330,12 @@ impl SharedState for State {
             .expire(&redis_key, 24 * 60 * 60)
             .await
             .context("Redis expire failed")?;
+        // local state (for metrics)
+        let mut state = self
+            .write()
+            .map_err(|e| anyhow!("Get global state as write failed: {}", e))?;
+        let room = state.rooms.entry(room.to_string()).or_default();
+        room.conns.push(pc);
         Ok(())
     }
 
