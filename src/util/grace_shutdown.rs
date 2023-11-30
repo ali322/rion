@@ -1,3 +1,5 @@
+use crate::pkg::{SharedState, SHARED_STATE};
+
 pub async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -16,10 +18,24 @@ pub async fn shutdown_signal() {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+    async fn clean_up() {
+        let rooms = SHARED_STATE.list_own_room().expect("list_own_room failed");
+        for r in rooms {
+            SHARED_STATE.remove_room_media_count(&r).await.unwrap();
+        }
     }
+
+    tokio::select! {
+        _ = ctrl_c => {
+          tracing::info!("ctrl_c");
+          clean_up().await;
+        },
+        _ = terminate => {
+          tracing::info!("terminate");
+          clean_up().await;
+        },
+    }
+    println!("signal received, starting graceful shutdown");
 }
 
 #[macro_export]

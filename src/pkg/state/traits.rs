@@ -28,6 +28,7 @@ pub trait SharedState {
     async fn add_room(&self, domain: String) -> Result<String>;
     async fn remove_room(&self, domain: String, room: String) -> Result<()>;
     async fn list_room(&self, domain: String) -> Result<HashSet<String>>;
+    fn list_own_room(&self) -> Result<Vec<String>>;
     /// Set publisher authorization token
     async fn set_pub_token(&self, room: String, user: String, token: String) -> Result<()>;
     /// Set subscriber authorization token
@@ -40,6 +41,7 @@ pub trait SharedState {
     async fn add_user_media_count(&self, room: &str, user: &str, mime: &str) -> Result<()>;
     async fn get_users_media_count(&self, room: &str) -> Result<HashMap<(String, String), u8>>;
     async fn remove_user_media_count(&self, room: &str, user: &str) -> Result<()>;
+    async fn remove_room_media_count(&self, room: &str) -> Result<()>;
 
     /// Add publisher to room publishers list
     async fn add_publisher(&self, room: &str, user: &str, pc: Arc<RTCPeerConnection>)

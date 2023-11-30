@@ -124,6 +124,18 @@ impl SharedState for State {
         Ok(result)
     }
 
+    fn list_own_room(&self) -> Result<Vec<String>> {
+        let state = self
+            .write()
+            .map_err(|e| anyhow!("Get global state as write failed: {}", e))?;
+        let keys = state
+            .rooms
+            .keys()
+            .map(|k| k.to_string())
+            .collect::<Vec<String>>();
+        Ok(keys)
+    }
+
     async fn set_pub_token(&self, room: String, user: String, token: String) -> Result<()> {
         // redis version:
         let mut conn = self.get_redis()?;
@@ -235,6 +247,23 @@ impl SharedState for State {
             .expire(&redis_key, 24 * 60 * 60)
             .await
             .context("Redis expire failed")?;
+        Ok(())
+    }
+
+    async fn remove_room_media_count(&self, room: &str) -> Result<()> {
+        let mut conn = self.get_redis()?;
+        let redis_key = format!("room#{}#media", room);
+        let keys: Vec<(String, u8)> = conn
+            .hgetall(&redis_key)
+            .await
+            .context("Redis hgetall failed")?;
+        println!("keys {:?}", keys);
+        for (k, _) in keys {
+            let _: Option<()> = conn
+                .hdel(&redis_key, k)
+                .await
+                .context("Redis hdel failed")?;
+        }
         Ok(())
     }
 

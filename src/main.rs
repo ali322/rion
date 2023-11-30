@@ -1,12 +1,11 @@
-use anyhow::Context;
 use axum::{error_handling::HandleErrorLayer, http::Method, Server};
-use once_cell::sync::Lazy;
 use rion::{
     api::apply_routes,
     init_logger,
     middleware::handle_error,
     pkg::{SharedState, SHARED_STATE},
-    util::config::CONFIG
+    util::config::CONFIG,
+    util::shutdown_signal,
 };
 use std::{net::SocketAddr, time::Duration};
 use tower::ServiceBuilder;
@@ -55,6 +54,7 @@ async fn main() {
     tracing::info!("app started at {}", CONFIG.app.port);
     Server::bind(&addr)
         .serve(routes.into_make_service())
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("app started failed")
 }
