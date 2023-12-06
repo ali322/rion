@@ -2,11 +2,7 @@ use crate::{
     pkg::{catch, SharedState, SHARED_STATE},
     util::APIResult,
 };
-use axum::{
-    extract::{Path, Query},
-    routing::post,
-    Json, Router,
-};
+use axum::{routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 

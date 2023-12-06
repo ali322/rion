@@ -1,19 +1,18 @@
 use crate::util::short_id;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use bincode::{config::standard, Decode, Encode};
-use once_cell::sync::Lazy;
+use bincode::config::standard;
 use redis::aio::MultiplexedConnection;
 use redis::AsyncCommands;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{error, info};
 use webrtc::peer_connection::RTCPeerConnection;
 
 use crate::pkg::{
     catch,
-    state::{Command, Room, SHARED_STATE},
+    state::{Command, SHARED_STATE},
 };
 
 use super::state::State;
@@ -257,7 +256,6 @@ impl SharedState for State {
             .hgetall(&redis_key)
             .await
             .context("Redis hgetall failed")?;
-        println!("keys {:?}", keys);
         for (k, _) in keys {
             let _: Option<()> = conn
                 .hdel(&redis_key, k)

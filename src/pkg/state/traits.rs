@@ -1,5 +1,5 @@
 use super::state::Command;
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use redis::aio::MultiplexedConnection;
 use std::{

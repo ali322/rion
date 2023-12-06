@@ -1,25 +1,16 @@
 use crate::{
-    pkg::{catch, publisher, subscriber, SharedState, State, SHARED_STATE},
+    pkg::{catch, publisher, subscriber, SharedState, SHARED_STATE},
     util::APIResult,
 };
-use axum::{
-    body::{Body, Bytes},
-    extract::{Path, Query},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-    Json, Router,
-};
-use serde::{Deserialize, Serialize};
+use axum::{body::Bytes, extract::Path, routing::post, Router};
 use tracing::{debug, error, info};
-use validator::Validate;
 
 async fn create_pub(Path((room, full_id)): Path<(String, String)>, sdp: Bytes) -> APIResult {
     // body.validate()?;
     let id = full_id.splitn(2, '+').take(1).next().unwrap_or("");
     // special screen share "-screen" suffix
     let id = id.trim_end_matches("-screen").to_string();
-    // info!("room {} node {}", room, id);
+    info!("create pub node {} in room {}", id, room);
     // check if there is another publisher in the room with same id
     match SHARED_STATE.exist_publisher(&room, &full_id).await {
         Ok(true) => {
@@ -77,7 +68,7 @@ async fn create_sub(Path((room, full_id)): Path<(String, String)>, sdp: Bytes) -
     let id = full_id.splitn(2, '+').take(1).next().unwrap_or("");
     // special screen share "-screen" suffix
     let id = id.trim_end_matches("-screen").to_string();
-
+    info!("create sub node {} in room {}", id, room);
     // check if there is another publisher in the room with same id
     match SHARED_STATE.exist_subscriber(&room, &full_id).await {
         Ok(true) => {
@@ -127,14 +118,9 @@ async fn create_sub(Path((room, full_id)): Path<(String, String)>, sdp: Bytes) -
     Ok(reply!({"sdp": sdp_answer}))
 }
 
-async fn pubs() -> APIResult {
-    Ok(reply!("pubs"))
-}
-
 pub fn apply_routes() -> Router {
     let router = Router::new();
     router
-        .route("/pub", get(pubs))
         .route("/pub/:room/:node", post(create_pub))
         .route("/sub/:room/:node", post(create_sub))
 }

@@ -1,8 +1,6 @@
-use crate::{pkg::SharedState, util::jwt::Auth};
-use anyhow::{anyhow, Context, Result};
-use bincode::{config::standard, Decode, Encode};
+use bincode::{Decode, Encode};
 use once_cell::sync::Lazy;
-use redis::{aio::MultiplexedConnection, AsyncCommands};
+use redis::aio::MultiplexedConnection;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, RwLock},
@@ -39,14 +37,13 @@ impl Command {
 
 #[derive(Debug, Default)]
 pub struct AppState {
-    pub auth: Auth,
     pub rooms: HashMap<String, Room>,
     pub nats: Option<nats::asynk::Connection>,
     pub redis: Option<MultiplexedConnection>,
 }
 
 impl AppState {
-    pub fn change(&mut self, new: &str) {
+    pub fn change(&mut self, _: &str) {
         // self.version = new.to_string();
     }
 }

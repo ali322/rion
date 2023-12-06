@@ -3,7 +3,7 @@ use crate::{
     pkg::{SharedState, SHARED_STATE},
     util::config::CONFIG,
 };
-use anyhow::{anyhow, bail, Context, Error, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock, Weak};
@@ -36,7 +36,7 @@ use webrtc::{
     },
     rtp_transceiver::{
         rtp_codec::{RTCRtpCodecCapability, RTCRtpCodecParameters, RTPCodecType},
-        rtp_sender::{self, RTCRtpSender},
+        rtp_sender::RTCRtpSender,
     },
     track::{
         track_local::track_local_static_rtp::TrackLocalStaticRTP,
@@ -349,6 +349,7 @@ impl Subscriber {
                     .add_track(Arc::clone(&track) as Arc<dyn TrackLocal + Send + Sync>)
                     .await
                     .context("add track to peer connection failed")?;
+                sub.spawn_rtcp_reader(rtp_sender.clone())?;
                 sub.spawn_rtp_forward_task(track, &pub_user, &raw_mime, &track_id)
                     .await?;
                 rtp_senders
@@ -489,10 +490,8 @@ impl Subscriber {
                     Some(v) => v,
                     _ => return,
                 };
-                dc.on_open(sub.on_data_channel_sender(dc.clone(), dc_label.clone(), dc_id))
-                    .instrument(tracing::Span::current());
-                dc.on_message(sub.on_data_channel_msg(dc.clone(), dc_label.clone()))
-                    .instrument(tracing::Span::current());
+                dc.on_open(sub.on_data_channel_sender(dc.clone(), dc_label.clone(), dc_id));
+                dc.on_message(sub.on_data_channel_msg(dc.clone(), dc_label.clone()));
             }
             .instrument(tracing::Span::current()),
         )
@@ -698,7 +697,7 @@ pub async fn nats_to_webrtc(
     user: String,
     offer: String,
     answer_tx: oneshot::Sender<String>,
-    tid: u16,
+    _tid: u16,
 ) -> Result<()> {
     let offer = RTCSessionDescription::offer(offer.to_string()).unwrap();
     info!("get nats");

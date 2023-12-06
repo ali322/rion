@@ -126,7 +126,7 @@ impl PublisherDetails {
             Some(Duration::from_secs(1)), // keepalive timeout
         );
         if let Some(ip) = public_ip {
-            // setting.set_nat_1to1_ips(vec![ip], RTCIceCandidateType::Srflx);
+            setting.set_nat_1to1_ips(vec![ip], RTCIceCandidateType::Srflx);
         }
         let api = APIBuilder::new()
             .with_setting_engine(setting)
@@ -503,7 +503,7 @@ pub async fn webrtc_to_nats(
     user: String,
     offer: String,
     answer_tx: oneshot::Sender<String>,
-    tid: u16,
+    _tid: u16,
 ) -> Result<()> {
     // NATS
     info!("getting NATS");
